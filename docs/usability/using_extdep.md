@@ -25,6 +25,7 @@ Ext_deps leverage the environment scope concept so that a repository can carry e
 Ext_deps are common infrastructure so that all external dependencies can be handled consistantly.  Versions are added to the version report so that for any given operation (like build) a complete list of what was used is available.  This makes tracking versions consistant and "free".  Ext_deps when fetched will update their state.  If the repository is updated to include a new ext_dep version the tool will be told the environment state is not valid and can then enforce thet user updates their environment.
 
 ## Examples of Usage
+
 Here are a few examples where ext_deps have been found useful:
 
 * An ext_dep describing a test repository that is only needed when running unit tests.  By leveraging scopes this ext_dep is only fetched when the unittest scope is active.
@@ -37,6 +38,14 @@ Here are a few examples where ext_deps have been found useful:
 ### NuGet Dependency
 
 Nuget dependency is used to fetch files from a nuget feed.  This feed can be either unauthenticated or authenticated.  Support is done by using the nuget command line tool.  When the ext_dep type is set to ***nuget*** the descriptor will be intrepreted as a nuget dependency.  Nuget has a few nice features such as caching, authentication, versioning, and is platform and language agnostic.
+
+#### Note on Credential providers
+
+Many nuget packages come from authenticated streams and will need a credential provider.
+In the past, a few different solutions have been employeed and some have been included as a plugin.
+Currently, edk2-pytools does not natively supply a credential provider, though this should be relatively straightforward for someone to implement.
+The best documentation (at time of writing) is located [here](https://docs.microsoft.com/en-us/nuget/reference/extensibility/nuget-exe-credential-providers).
+One such credential provider would be the one for [Azure Artifacts](https://github.com/Microsoft/artifacts-credprovider)
 
 ### Web Dependency
 
