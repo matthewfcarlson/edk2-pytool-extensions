@@ -47,12 +47,14 @@ class WebDependency(ExternalDependency):
         """ return a string representation of this """
         return f"WebDependecy: {self.source}@{self.version}"
 
+    @staticmethod
     def linuxize_path(path):
         '''
         path: path that uses os.sep, to be replaced with / for compatibility with zipfile
         '''
         return "/".join(path.split("\\"))
 
+    @staticmethod
     def unpack(compressed_file_path, destination, internal_path, compression_type):
         '''
         compressed_file_path: name of compressed file to unpack.
@@ -86,20 +88,23 @@ class WebDependency(ExternalDependency):
         for file in files_to_extract:
             _ref.extract(member=file, path=destination)
         _ref.close()
+        return destination
 
+    @staticmethod
     def get_internal_path_root(outer_dir, internal_path):
         temp_path_root = internal_path.split(os.sep)[0] if os.sep in internal_path else internal_path
         unzip_root = os.path.join(outer_dir, temp_path_root)
         return unzip_root
 
-    def fetch(self):
-        url = self.source
-        temp_folder = tempfile.mkdtemp()
-        temp_file_path = os.path.join(temp_folder, f"{self.name}_{self.version}")
+    def get_download_url(self):
+        return self.source
 
+    def download(self, download_location):
+        ''' downloads the web dependency '''
+        url = self.get_download_url()
         try:
-            # Download the file and save it locally under `temp_file_path`
-            with urllib.request.urlopen(url) as response, open(temp_file_path, 'wb') as out_file:
+            # Download the file and save it locally as the download_location_file
+            with urllib.request.urlopen(url) as response, open(download_location, 'wb') as out_file:
                 out_file.write(response.read())
         except urllib.error.HTTPError as e:
             logging.error(f"ran into an issue when resolving ext_dep {self.name} at {self.source}")
@@ -107,7 +112,7 @@ class WebDependency(ExternalDependency):
 
         # check if file hash is as expected, if it was provided in the ext_dep.json
         if self.sha256:
-            with open(temp_file_path, "rb") as file:
+            with open(download_location, "rb") as file:
                 import hashlib
                 temp_file_sha256 = hashlib.sha256(file.read()).hexdigest()
 
@@ -116,42 +121,60 @@ class WebDependency(ExternalDependency):
                 raise RuntimeError(f"{self.name} - sha256 does not match\n\tdownloaded:"
                                    f"\t{temp_file_sha256}\n\tin json:\t{self.sha256}")
 
-        if os.path.isfile(temp_file_path) is False:
+        if os.path.isfile(download_location) is False:
             raise RuntimeError(f"{self.name} did not download")
+
+    def copy_unpackged_directory(self, temp_folder):
+        # internal_path points to the "important" part of the ext_dep we're unpacking
+        complete_internal_path = os.path.join(temp_folder, self.internal_path)
+        # If we're unpacking a directory, we can copy the important parts into
+        # a directory named self.contents_dir
+        # The root of the internal path is the folder we will see populated in descriptor_location
+        unzip_root = WebDependency.get_internal_path_root(self.descriptor_location, self.internal_path)
+
+        logging.info(f"Copying directory from {complete_internal_path} to {self.contents_dir}")
+        if os.path.isdir(complete_internal_path) is False:
+            # internal_path was not accurate, exit
+            raise RuntimeError(f"{self.name} was expecting {complete_internal_path} to exist after unpacking")
+
+        # Move the important folder out and rename it to contents_dir
+        shutil.move(complete_internal_path, self.contents_dir)
+
+        # If the unzipped directory still exists, delete it.
+        if os.path.isdir(complete_internal_path):
+            logging.debug(f"Cleaning up {complete_internal_path}")
+            shutil.rmtree(complete_internal_path)
+
+    def copy_unpacked_file(self, temp_file_path):
+        # If we just downloaded a file, we need to create a directory named self.contents_dir,
+        # copy the file inside, and name it self.internal_path
+        os.makedirs(self.contents_dir, exist_ok=True)
+        complete_internal_path = os.path.join(self.contents_dir, self.internal_path)
+        logging.info(f"Copying file to {complete_internal_path}")
+        shutil.move(temp_file_path, complete_internal_path)
+
+    def fetch(self):
+        temp_folder = tempfile.mkdtemp()
+        temp_file_path = os.path.join(temp_folder, f"{self.name}_{self.version}")
+
+        if self.compression_type == 'zip':
+            temp_file_path += '.zip'
+        if self.compression_type == 'tar':
+            temp_file_path += '.tar'
+
+        self.download(temp_file_path)
 
         # Next, we will look at what's inside it and pull out the parts we need.
         if self.compression_type:
-            WebDependency.unpack(temp_file_path, temp_folder, self.internal_path, self.compression_type)
-
-        # internal_path points to the "important" part of the ext_dep we're unpacking
-        complete_internal_path = os.path.join(temp_folder, self.internal_path)
-
-        # # If we're unpacking a directory, we can copy the important parts into
-        # # a directory named self.contents_dir
+            dest_folder = os.path.join(temp_folder, 'unpack')
+            os.makedirs(dest_folder, exist_ok=True)
+            temp_folder = self.unpack(temp_file_path, dest_folder, self.internal_path, self.compression_type)
+        
+        # Next, if it's a directory or a file copy it into the correct location
         if self.download_is_directory:
-            # The root of the internal path is the folder we will see populated in descriptor_location
-            unzip_root = WebDependency.get_internal_path_root(self.descriptor_location, self.internal_path)
-
-            logging.info(f"Copying directory from {complete_internal_path} to {self.contents_dir}")
-            if os.path.isdir(complete_internal_path) is False:
-                # internal_path was not accurate, exit
-                raise RuntimeError(f"{self.name} was expecting {complete_internal_path} to exist after unpacking")
-
-            # Move the important folder out and rename it to contents_dir
-            shutil.move(complete_internal_path, self.contents_dir)
-
-            # If the unzipped directory still exists, delete it.
-            if os.path.isdir(unzip_root):
-                logging.debug(f"Cleaning up {unzip_root}")
-                shutil.rmtree(unzip_root)
-
-        # If we just downloaded a file, we need to create a directory named self.contents_dir,
-        # copy the file inside, and name it self.internal_path
+            self.copy_unpackged_directory(temp_folder)
         else:
-            os.makedirs(self.contents_dir, exist_ok=True)
-            complete_internal_path = os.path.join(self.contents_dir, self.internal_path)
-            logging.info(f"Copying file to {complete_internal_path}")
-            shutil.move(temp_file_path, complete_internal_path)
+            self.copy_unpacked_file(temp_file_path)
 
         # Add a file to track the state of the dependency.
         self.update_state_file()
