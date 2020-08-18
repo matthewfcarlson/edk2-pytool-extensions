@@ -44,6 +44,17 @@ single_file_extdep = {
     "flags": [],
     "internal_path": "test.txt"
 }
+tar_directory_extdep = {
+    "scope": "global",
+    "type": "web",
+    "name": "unix-bison",
+    "compression_type": "tar",
+    "source": "https://ftp.gnu.org/gnu/m4/m4-1.4.6.tar.gz",
+    "version": "1.4.6",
+    "sha256": "130402a5751721771a3f3d5a71189ae744df9deb3f9988e15087c8b16a135310",
+    "flags": [],
+    "internal_path": "/"
+}
 
 # Download a valid file from CDN
 jquery_json_file = {
@@ -65,7 +76,7 @@ def prep_workspace():
         test_dir = tempfile.mkdtemp()
         logging.debug("temp dir is: %s" % test_dir)
     else:
-        shutil.rmtree(test_dir)
+        #shutil.rmtree(test_dir)
         test_dir = tempfile.mkdtemp()
 
 
@@ -75,7 +86,7 @@ def clean_workspace():
         return
 
     if os.path.isdir(test_dir):
-        shutil.rmtree(test_dir)
+        #shutil.rmtree(test_dir)
         test_dir = None
 
 
@@ -119,6 +130,21 @@ class TestWebDependency(unittest.TestCase):
         file_path = os.path.join(test_dir, ext_dep_name, single_file_extdep['internal_path'])
         if not os.path.isfile(file_path):
             self.fail("The downloaded file isn't there")
+
+    # try to download a single file and test sha256 comparison
+    def test_sha256_whole_directory(self):
+        ext_dep_file_path = os.path.join(test_dir, "good_ext_dep.json")
+
+        with open(ext_dep_file_path, "w+") as ext_dep_file:
+            ext_dep_file.write(json.dumps(tar_directory_extdep))  # dump to a file
+
+        ext_dep_descriptor = EDF.ExternDepDescriptor(ext_dep_file_path).descriptor_contents
+        ext_dep = WebDependency(ext_dep_descriptor)
+        ext_dep.fetch()
+
+        ext_dep_name = tar_directory_extdep['name'] + "_extdep"
+        print(test_dir)
+        self.fail()
 
     # try to download a single file and test sha256 comparison
     def test_sha256_uppercase_single_file(self):
